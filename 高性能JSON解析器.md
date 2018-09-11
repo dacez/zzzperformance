@@ -671,4 +671,4 @@ nativejson-benchmark在JSON性能测试方面做了非常大的贡献，因此�
 
 若对大规模分布式系统架构与性能优化有兴趣，欢迎交流。
 
-![](D:\GOML\src\github.com\dacez\zzzperformance\resource\wechat.png)
+![](https://github.com/dacez/zzzperformance/blob/master/resource/wechat.png?raw=true)
