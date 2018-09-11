@@ -481,4 +481,194 @@ static inline zzz_BOOL zzz_ConsumeStr(const char *s, zzz_SIZE *index)
 
 由于JSON标准规定，JSON中的字符串不能包含小于或等于0x1f的字符，zzzJSON认为绝大多数情况下，JSON文本是正确的JSON，因此，绝大多数情况下字符串中的字符大于0x1f。
 
-### 2.5 
+### 2.5 模拟SIMD
+
+zzzJSON不使用SIMD的是为了平台无关，因为并不是每台机器都支持SIMD的，特别是在大型分布式系统中，老旧机器是必然存在的。但是在某些情况下，可以模拟SIMD，例如下面判断字符串是否为true的代码：
+
+```C
+static inline zzz_BOOL zzz_ConsumeTrue(const char *s, zzz_SIZE *index)
+{
+    // 把字符串对应的内容转化为32位无符号整形，然后进行比较
+    if (zzz_LIKELY(*((uint32_t *)("true")) == *((uint32_t *)(s + *index - 1))))
+    {
+        *index += 3;
+        return zzz_True;
+    }
+    return zzz_False;
+}
+```
+
+## 三、性能测试
+
+在做性能优化之前，必须先把性能测试做好，zzzJSON的性能测试分为两部分：
+
+- 正确性测试
+- 速度测试
+
+正确性测试用于保障zzzJSON满足所有JSON标准，速度测试用于证明zzzJSON的解析和序列化速度。
+
+### 3.1 测试环境
+
+| CPU                 | 操作系统            | 编译器  | 优化等级 |
+| ------------------- | ------------------- | ------- | -------- |
+| i7-6700 （3.40GHZ） | Ubuntu 18.04（WSL） | G++-7.3 | O3       |
+
+### 3.2 正确性测试
+
+zzzJSON的正确性测试参考nativejson-benchmark的测试方法，从以下方面进行测试：
+
++ JSON官方网站提供的正确与不正确的JSON样本测试（层数限制那个样本除外）；
++ 字符串测试；
++ 双精度浮点型测试；
++ 来回测试（解析后序列化再对比）。
+
+zzzJSON通过以上四个测试，详细的代码在 conformance_test.cpp 文件中。
+
+### 3.3 性能测试
+
+zzzJSON从多方面测试其解析和序列化速度，主要包括：无数字数据测试、nativejson-benchmark数据测试、淘宝数据测试、混合数据测试、随机长JSON测试和随机短JSON测试，每个测试分别测试解析耗时、序列化耗时和全部耗时，其中全部耗时包括创建对象、解析、序列化和析构的耗时总和，详细的代码在 performance_test.cpp 文件中。以下测试包含了C/C++的主流JSON解析器，其中RapidJSON开启了SIMD。zzzJSON不使用SIMD的主要原因是：1. 不能使用相同的二进制统一部署；2. 增加代码复杂度。
+
+无数字数据测试、nativejson-benchmark数据测试、淘宝数据测试和混合数据测试在每次测试的时候均重启进程，防止命中缓存。随机长JSON测试和随机短JSON测试在同一个进程中进行，可以体现批量处理JSON文本时的性能。
+
+
+#### 无数字数据测试
+
+由于zzzJSON使用读时解析，因此，在解析的时候只判断数字的正确性，而不把数字转化成浮点数。大部分JSON解析器都会把数字转化为浮点型，为了保证公平，使用无数字的JSON文本则能够避免这种情况，测试结果如下：
+> 以下所有数据单位为ms。
+
+| 解析器名字   | 解析耗时 | 序列化耗时 | 全部耗时 |
+| ------------ | -------- | ---------- | -------- |
+| cjson        | 162      | 122        | 284      |
+| gason        | 60       | 321        | 398      |
+| jsoncpp      | 830      | 556        | 1588     |
+| nlohmannjson | 994      | 312        | 1414     |
+| picojson     | 824      | 295        | 1214     |
+| rapidjson    | 128      | 92         | 224      |
+| rapidjsonfp  | 147      | 91         | 245      |
+| rapidjsonstr | 127      | 89         | 225      |
+| taocppjson   | 724      | 261        | 1070     |
+| zzzjson      | 86       | 56         | 149      |
+
+以上测试表明，在无数字数据测试中，zzzJSON的速度最快。
+> rapidJSON全部开启了SIMD，其中rapidJSON为默认的rapidJSON，rapidJSONFP为支持全精度的rapidJSON，rapidJSONSTR为把数字解析为字符串的rapidJSON。
+>
+> 由于系统有多个进程在跑，因此，数据会有波动，例如：解析耗时 + 序列化耗时 < 全部耗时。但是上表反映的情况基本符合客观事实，多次重跑结果大致相同。
+>
+> ArduinoJSON和parsonJSON不参与无数字数据测试是因为他们解析长JSON时会发生错误。
+
+#### nativejson-benchmark数据测试
+
+nativejson-benchmark在JSON性能测试方面做了非常大的贡献，因此，使用nativejson-benchmark的数据进行测试非常有意义，测试结果如下：
+> 以下所有数据单位为ms。
+
+| 解析器名字   | 解析耗时 | 序列化耗时 | 全部耗时 |
+| ------------ | -------- | ---------- | -------- |
+| arduinojson  | 779      | 25         | 807      |
+| cjson        | 53       | 183        | 230      |
+| gason        | 8        | 88         | 93       |
+| jsoncpp      | 88       | 126        | 221      |
+| nlohmannjson | 62       | 24         | 91       |
+| parson       | 52       | 277        | 336      |
+| picojson     | 54       | 108        | 165      |
+| rapidjson    | 11       | 15         | 23       |
+| rapidjsonfp  | 20       | 17         | 39       |
+| rapidjsonstr | 24       | 12         | 37       |
+| taocppjson   | 34       | 29         | 66       |
+| zzzjson      | 18       | 7          | 22       |
+
+以上测试表明，在nativejson-benchmark数据测试中，zzzJSON的速度最快。
+
+#### 淘宝数据测试
+
+使用fastjson提供的淘宝网的真实数据进行测试，能够更好的体现真实的使用情况，测试结果如下：
+> 以下所有数据单位为ms。
+
+| 解析器名字   | 解析耗时 | 序列化耗时 | 全部耗时 |
+| ------------ | -------- | ---------- | -------- |
+| arduinojson  | 23       | 62         | 87       |
+| cjson        | 38       | 23         | 60       |
+| gason        | 9        | 51         | 63       |
+| jsoncpp      | 67       | 51         | 126      |
+| nlohmannjson | 72       | 29         | 105      |
+| parson       | 48       | 85         | 141      |
+| picojson     | 54       | 35         | 96       |
+| rapidjson    | 18       | 12         | 28       |
+| rapidjsonfp  | 18       | 14         | 30       |
+| rapidjsonstr | 16       | 12         | 29       |
+| taocppjson   | 47       | 28         | 86       |
+| zzzjson      | 14       | 7          | 23       |
+
+以上测试表明，在淘宝数据测试中，zzzJSON的速度最快。
+
+#### 混合数据测试
+> 以下所有数据单位为ms。
+
+混合数据测试使用了nativejson-benchmark、淘宝和json-iterator的数据，能够更好的体现真实的使用情况，测试结果如下：
+
+| 解析器名字   | 解析耗时 | 序列化耗时 | 全部耗时 |
+| ------------ | -------- | ---------- | -------- |
+| arduinojson  | 2056     | 505        | 2508     |
+| cjson        | 243      | 345        | 596      |
+| gason        | 63       | 431        | 500      |
+| jsoncpp      | 451      | 431        | 961      |
+| nlohmannjson | 518      | 217        | 840      |
+| parson       | 309      | 857        | 1214     |
+| picojson     | 405      | 387        | 862      |
+| rapidjson    | 97       | 119        | 220      |
+| rapidjsonfp  | 113      | 126        | 245      |
+| rapidjsonstr | 116      | 121        | 240      |
+| taocppjson   | 278      | 207        | 561      |
+| zzzjson      | 95       | 59         | 166      |
+
+以上测试表明，在混合数据测试中，zzzJSON的速度最快。
+
+#### 随机短JSON测试
+该测试随机生成一万条短JSON用于测试，该测试用于检验批量处理JSON的性能，测试结果如下：
+
+| 解析器名字   | 解析耗时 | 序列化耗时 | 全部耗时 |
+| ------------ | -------- | ---------- | -------- |
+| cjson        | 100      | 107        | 200      |
+| jsoncpp      | 136      | 127        | 284      |
+| nlohmannjson | 177      | 58         | 242      |
+| picojson     | 94       | 95         | 205      |
+| rapidjson    | 31       | 39         | 56       |
+| rapidjsonfp  | 36       | 19         | 63       |
+| rapidjsonstr | 37       | 35         | 60       |
+| taocppjson   | 90       | 50         | 143      |
+| zzzjson      | 26       | 16         | 38       |
+
+以上测试结果表明，在批量处理短JSON的场景，zzzJSON的速度最快。
+
+#### 随机长JSON测试
+该测试随机生成一百条长JSON用于测试，该测试用于检验批量处理JSON的性能，测试结果如下：
+
+| 解析器名字   | 解析耗时 | 序列化耗时 | 全部耗时 |
+| ------------ | -------- | ---------- | -------- |
+| cjson        | 81       | 67         | 155      |
+| jsoncpp      | 130      | 112        | 244      |
+| nlohmannjson | 199      | 42         | 254      |
+| picojson     | 127      | 93         | 222      |
+| rapidjson    | 24       | 17         | 45       |
+| rapidjsonfp  | 28       | 24         | 46       |
+| rapidjsonstr | 30       | 24         | 48       |
+| taocppjson   | 100      | 34         | 149      |
+| zzzjson      | 20       | 9          | 29       |
+
+以上测试结果表明，在批量处理长JSON的场景，zzzJSON的速度最快。
+
+### 3.4 总结
+
+测试结果表明，在主流JSON解析库中，zzzJSON拥有最快的解析和序列化速度。
+
+## 四、相关源码
+
++ zzzJSON 高性能JSON解析库 https://github.com/dacez/zzzjson
+
++ zzzperformance 性能优化的艺术和实践 https://github.com/dacez/zzzperformance
+
+## 五、作者介绍
+本人是微信一枚高级中级攻城狮，最近半年一直在做架构与性能优化，取得一些成果，与大家分享，若有错误，轻喷。
+
+若对大规模分布式系统架构与性能优化有兴趣，欢迎交流。
+
+![](D:\GOML\src\github.com\dacez\zzzperformance\resource\wechat.png)
