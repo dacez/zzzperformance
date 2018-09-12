@@ -104,7 +104,7 @@ func (v *Value) Stringify() *string {
 
 zzzJSON的内存分配器统一管理所有内存操作，它会先使用malloc函数分配一段大小为A的内存，当zzzJSON需要分配内存时，先从该段内存分配，如果使用完，则再使用malloc函数分配一段大小为2A的内存，如此反复。zzzJSON整个生命周期完毕之后，使用free函数，释放所有使用malloc函数申请的内存。内存分配器的结构图如下：
 
-![](D:\GOML\src\github.com\dacez\zzzperformance\resource\allocator.png)
+![](https://github.com/dacez/zzzperformance/blob/master/resource/allocator.png?raw=true)
 
 内存分配器的数据结构如下：
 
@@ -215,7 +215,7 @@ static inline char *zzz_AllocatorAlloc(struct zzz_Allocator *alloc, zzz_SIZE siz
 
 递归能够简化代码，但是其效率低下，zzzJSON为了提高性能，采用循环代替所有递归。大部分JSON解析器都是使用递归实现，zzzJSON使用循环实现，同时为了提高增删改查的效率，其内存中的节点使用了比较复杂的数据结构。zzzJSON的节点结构图如下：
 
-![](D:\GOML\src\github.com\dacez\zzzperformance\resource\Node.png)
+![](https://github.com/dacez/zzzperformance/blob/master/resource/Node.png?raw=true)
 
 如果节点的类型对象或者数组，那么值为其第一个孩子节点。具体的代码如下：
 
